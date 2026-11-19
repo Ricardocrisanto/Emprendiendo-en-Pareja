@@ -89,3 +89,9 @@ El archivo `.github/workflows/firebase-hosting.yml` ejecuta las pruebas y public
 2. Vincula ese repositorio al proyecto **emprendiendo-en-pareja** con el asistente oficial `npx firebase-tools init hosting:github --project emprendiendo-en-pareja`. El asistente autoriza Firebase y GitHub y guarda la credencial como secreto `FIREBASE_SERVICE_ACCOUNT_EMPRENDIENDO_EN_PAREJA`. Conserva el flujo incluido en este paquete. Si el asistente genera flujos adicionales, revísalos antes de subirlos para evitar despliegues duplicados.
 3. Ejecuta el flujo en GitHub. Abre el enlace temporal que devuelve la ejecución y prueba la app con un usuario de prueba autorizado.
 4. Después de verificarla, en GitHub abre **Settings → Secrets and variables → Actions → Variables**, crea `PUBLICACION_ACTIVA` con el valor `true` y ejecuta nuevamente el flujo. Los siguientes cambios en `main` se publicarán en la URL definitiva de Hosting.
+
+### Acceso con Google
+
+En **Authentication → Método de acceso**, habilita **Google** y selecciona el correo de asistencia del proyecto. Habilita el dominio de producción en **Authentication → Configuración → Dominios autorizados**. Para configurar el acceso por redirección, usa el dominio de producción como `authDomain` y registra `https://emprendiendo-en-pareja.web.app/__/auth/handler` como URI de redirección autorizada del cliente OAuth web del proyecto para ese flujo.
+
+Cada cuenta usa su UID. Autoriza en Firestore los UID que deban consultar datos. Vincula métodos al mismo UID antes de migrar una cuenta existente si Firebase crea un usuario distinto.

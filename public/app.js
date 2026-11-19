@@ -18,7 +18,7 @@ const sim={vestQty:5,jacketQty:5,vestPrice:320,jacketPrice:390,capital:4000,rese
 let draftLines=[];
 function saveDemo(){if(!connected)localStorage.setItem(DEMO_KEY,JSON.stringify(store));}
 function toast(msg){const el=document.querySelector('#toast');el.textContent=msg;el.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('visible'),3100);}
-function errorMessage(err){const map={'auth/invalid-credential':'Correo o contraseña incorrectos','auth/too-many-requests':'Demasiados intentos. Inténtalo más tarde.','permission-denied':'No tienes permisos. Comprueba las reglas de Firestore.'};return map[err.code]||err.message||'No se pudo completar la operación.';}
+function errorMessage(err){const map={'auth/invalid-credential':'Correo o contraseña incorrectos','auth/too-many-requests':'Demasiados intentos. Inténtalo más tarde.','permission-denied':'Este usuario aún no está autorizado para consultar los datos.','auth/operation-not-allowed':'El acceso con Google aún no está habilitado. Puedes entrar con correo y contraseña.','auth/unauthorized-domain':'Este enlace no está autorizado para entrar con Google. Usa la dirección principal de la app.'};return map[err.code]||err.message||'No se pudo completar la operación.';}
 function productsOptions(){return store.products.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} · ${escapeHtml(p.color)} ${escapeHtml(p.size)} (${p.stock} disp.)</option>`).join('');}
 function viewName(){return VIEWS.find(v=>v[0]===current)?.[1]||'Inicio';}
 function stateReady(){return (!connected||cloudReady) && !!store && !!store.products && !!store.settings;}
@@ -91,20 +91,22 @@ async function initCloud(){
  });
  if(config.projectId!=='emprendiendo-en-pareja'||!config.apiKey||!config.authDomain||!config.appId)throw Error('Configura un proyecto Firebase exclusivo para la boutique.');
  const version='12.5.0';
- const [{initializeApp},{getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut},{getFirestore,collection,doc,addDoc,setDoc,updateDoc,onSnapshot,runTransaction}] = await Promise.all([
+ const [{initializeApp},{getAuth,getRedirectResult,GoogleAuthProvider,onAuthStateChanged,signInWithEmailAndPassword,signInWithPopup,signInWithRedirect,signOut},{getFirestore,collection,doc,addDoc,setDoc,updateDoc,onSnapshot,runTransaction}] = await Promise.all([
   import(`https://www.gstatic.com/firebasejs/${version}/firebase-app.js`),
   import(`https://www.gstatic.com/firebasejs/${version}/firebase-auth.js`),
   import(`https://www.gstatic.com/firebasejs/${version}/firebase-firestore.js`)
  ]);
  const app=initializeApp(config),auth=getAuth(app),db=getFirestore(app);
- firebase={auth,db,collection,doc,addDoc,setDoc,updateDoc,onSnapshot,runTransaction,signInWithEmailAndPassword,signOut};
+ firebase={auth,db,collection,doc,addDoc,setDoc,updateDoc,onSnapshot,runTransaction,signInWithEmailAndPassword,signInWithPopup,signInWithRedirect,GoogleAuthProvider,signOut};
+ let redirectError;
+ await getRedirectResult(auth).catch(err=>{redirectError=err;});
  onAuthStateChanged(auth,u=>{
   snapshots.forEach(unsubscribe=>unsubscribe());
   snapshots=[];
   cloudReady=false;
   closeModal();
   user=u;
-  if(!u){store=null;current='inicio';renderLogin();return;}
+  if(!u){store=null;current='inicio';renderLogin();if(redirectError){showLoginError(redirectError);redirectError=null;}return;}
   document.querySelector('#app').textContent='Cargando datos del negocio…';
   store={products:[],purchases:[],sales:[],expenses:[],settings:{...defaultSettings}};
   const pending=new Set(['products','purchases','sales','expenses','settings']);
@@ -132,7 +134,53 @@ async function initCloud(){
   },failed));
  });
 }
-function renderLogin(){document.querySelector('#app').innerHTML=`<div class="login-page"><div class="login-art"><div class="large-mark">✦</div><h1>Emprendiendo en Pareja</h1><p>Tu espacio privado para cuidar el inventario, las ventas y las ganancias de tu emprendimiento.</p></div><div class="login-form"><div class="eyebrow">Acceso privado</div><h2>Bienvenida de nuevo</h2><p>Inicia sesión con la cuenta que registraste en Firebase Authentication.</p><form id="login-form"><div class="field"><label>Correo electrónico</label><input name="email" type="email" required autocomplete="username" placeholder="tu@correo.com"></div><div class="field"><label>Contraseña</label><input name="password" type="password" required autocomplete="current-password" placeholder="••••••••"></div><div class="login-error" id="login-error" aria-live="assertive"></div><button class="primary" type="submit">Entrar a mi negocio ${icon('arrow',17)}</button></form><p class="footnote">No existe registro público de usuarios. Crea tu cuenta desde la consola de Firebase.</p></div></div>`;}
+function showLoginError(err){
+ const message=document.getElementById('login-error');
+ if(message)message.textContent=errorMessage(err);
+}
+async function loginWithGoogle(button){
+ const provider=new firebase.GoogleAuthProvider();
+ provider.setCustomParameters({prompt:'select_account'});
+ button.disabled=true;
+ document.getElementById('login-error').textContent='';
+ try{
+  await firebase.signInWithPopup(firebase.auth,provider);
+ }catch(err){
+  if(err.code==='auth/popup-blocked'&&firebase.auth.config.authDomain===location.hostname){
+   try{await firebase.signInWithRedirect(firebase.auth,provider);}
+   catch(redirectError){showLoginError(redirectError);}
+  }else if(err.code!=='auth/popup-closed-by-user')showLoginError(err);
+ }finally{button.disabled=false;}
+}
+function renderLogin(){
+ document.querySelector('#app').innerHTML=`
+  <div class="login-page">
+   <div class="login-art"><div class="large-mark">✦</div><h1>Emprendiendo en Pareja</h1><p>Tu espacio privado para cuidar el inventario, las ventas y las ganancias de tu emprendimiento.</p></div>
+   <div class="login-form">
+    <div class="eyebrow">Acceso privado</div><h2>Elige cómo entrar</h2>
+    <div class="login-methods">
+     <button class="primary" type="button" id="google-login">Continuar con Google</button>
+     <button class="secondary" type="button" id="email-login" aria-expanded="false" aria-controls="login-form">Entrar con correo y contraseña</button>
+    </div>
+    <form id="login-form" hidden>
+     <div class="field"><label for="login-email">Correo electrónico</label><input id="login-email" name="email" type="email" required autocomplete="username" placeholder="tu@correo.com"></div>
+     <div class="field"><label for="login-password">Contraseña</label><input id="login-password" name="password" type="password" required autocomplete="current-password"></div>
+     <button class="primary" type="submit">Entrar a mi negocio ${icon('arrow',17)}</button>
+    </form>
+    <div class="login-error" id="login-error" role="status"></div>
+    <p class="footnote">Solo las cuentas autorizadas pueden consultar los datos.</p>
+   </div>
+  </div>`;
+ const googleButton=document.getElementById('google-login');
+ googleButton.addEventListener('click',()=>loginWithGoogle(googleButton));
+ const emailButton=document.getElementById('email-login');
+ emailButton.addEventListener('click',()=>{
+  const form=document.getElementById('login-form');
+  form.hidden=!form.hidden;
+  emailButton.setAttribute('aria-expanded',String(!form.hidden));
+  if(!form.hidden)form.elements.email.focus();
+ });
+}
 async function cloudUpsert(type,data,docId=null){if(docId)return firebase.setDoc(firebase.doc(firebase.db,'users',user.uid,type,docId),data);return firebase.addDoc(firebase.collection(firebase.db,'users',user.uid,type),data);}
 async function addProduct(form){const p={sku:String(form.get('sku')).trim().toUpperCase(),name:String(form.get('name')).trim(),size:String(form.get('size')).trim(),color:String(form.get('color')).trim(),category:String(form.get('category')||'Ropa').trim(),price:rounded(form.get('price')),listCost:rounded(form.get('listCost')),stock:0,avgCost:0};if(store.products.some(x=>x.sku.toLowerCase()===p.sku.toLowerCase()))throw Error('Ya existe ese SKU. Usa uno diferente.');if(connected){await cloudUpsert('products',p);}else{store.products.push({id:id(),...p});saveDemo();render();}}
 async function savePrice(form){const p=store.products.find(p=>p.id===form.get('productId'));if(!p)throw Error('Producto inexistente.');const price=rounded(form.get('price'));if(price<0)throw Error('El precio no puede ser negativo.');if(connected)await firebase.updateDoc(firebase.doc(firebase.db,'users',user.uid,'products',p.id),{price});else{p.price=price;saveDemo();render();}}
@@ -159,6 +207,6 @@ async function actionClick(button){const action=button.dataset.action;if(action=
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;try{await actionClick(b);}catch(err){toast(errorMessage(err));console.error(err);}});
 document.addEventListener('change',e=>{if(e.target.id==='sale-product'){const p=store.products.find(p=>p.id===e.target.value);if(p){const price=document.querySelector('#sale-form [name=price]'),paid=document.querySelector('#sale-form [name=paidAmount]');if(price)price.value=p.price;const f=price?.form;if(paid&&!f.dataset.paidTouched)paid.value=Math.max(0,rounded(p.price*num(f.elements.qty.value)-num(f.elements.discount.value)+num(f.elements.shippingCollected.value)));}}if(e.target.classList.contains('line-product')){const line=e.target.closest('.line-item'),p=store.products.find(x=>x.id===e.target.value);if(p)line.querySelector('.line-price').value=p.listCost;}if(e.target.closest('#purchase-form'))updateOrderSummary();});
 document.addEventListener('input',e=>{if(e.target.dataset.sim){const k=e.target.dataset.sim;sim[k]=num(e.target.value);document.querySelector(`#simval-${k}`).textContent=['vestQty','jacketQty','min'].includes(k)?sim[k]:money(sim[k]);document.querySelector('#sim-result').innerHTML=simOutput();}if(e.target.id==='search'){const needle=e.target.value.trim().toLowerCase();document.querySelectorAll('tr[data-search]').forEach(tr=>tr.hidden=!tr.dataset.search.includes(needle));}if(e.target.closest('#purchase-form'))updateOrderSummary();if(e.target.closest('#sale-form')&&['price','qty','discount','shippingCollected'].includes(e.target.name)){const f=e.target.closest('form');if(!f.dataset.paidTouched){f.elements.paidAmount.value=Math.max(0,rounded(num(f.elements.qty.value)*num(f.elements.price.value)-num(f.elements.discount.value)+num(f.elements.shippingCollected.value)));}}if(e.target.name==='paidAmount'&&e.target.closest('#sale-form'))e.target.closest('form').dataset.paidTouched='1';});
-document.addEventListener('submit',async e=>{if(!['product-form','purchase-form','sale-form','expense-form','settings-form','login-form','edit-price-form'].includes(e.target.id))return;e.preventDefault();const form=e.target,data=new FormData(form),btn=form.querySelector('[type=submit]');btn.disabled=true;try{switch(form.id){case'login-form':await firebase.signInWithEmailAndPassword(firebase.auth,data.get('email'),data.get('password'));break;case'product-form':await addProduct(data);break;case'edit-price-form':await savePrice(data);break;case'purchase-form':await savePurchase(data);break;case'sale-form':await saveSale(data);break;case'expense-form':await addExpense(data);break;case'settings-form':await saveSettings(data);break;}if(form.id!=='login-form'&&form.id!=='settings-form')closeModal();toast(form.id==='login-form'?'Sesión iniciada.':'Información guardada correctamente.');}catch(err){if(form.id==='login-form')document.querySelector('#login-error').textContent=errorMessage(err);else toast(errorMessage(err));console.error(err);}finally{if(btn.isConnected)btn.disabled=false;}});
+document.addEventListener('submit',async e=>{if(!['product-form','purchase-form','sale-form','expense-form','settings-form','login-form','edit-price-form'].includes(e.target.id))return;e.preventDefault();const form=e.target,data=new FormData(form),btn=form.querySelector('[type=submit]');btn.disabled=true;try{switch(form.id){case'login-form':await firebase.signInWithEmailAndPassword(firebase.auth,data.get('email'),data.get('password'));break;case'product-form':await addProduct(data);break;case'edit-price-form':await savePrice(data);break;case'purchase-form':await savePurchase(data);break;case'sale-form':await saveSale(data);break;case'expense-form':await addExpense(data);break;case'settings-form':await saveSettings(data);break;}if(form.id!=='login-form'&&form.id!=='settings-form')closeModal();toast(form.id==='login-form'?'Sesión iniciada.':'Información guardada correctamente.');}catch(err){if(form.id==='login-form')showLoginError(err);else toast(errorMessage(err));console.error(err);}finally{if(btn.isConnected)btn.disabled=false;}});
 async function boot(){if(connected){try{await initCloud();}catch(e){document.querySelector('#app').innerHTML=`<div class="loading-screen"><div class="logo-mark">!</div><h1>No se pudo conectar a Firebase</h1><p>${escapeHtml(errorMessage(e))}</p></div>`;}}else{try{const json=localStorage.getItem(DEMO_KEY);store=json?{...starterDemo(),...JSON.parse(json)}:starterDemo();}catch{store=starterDemo();}saveDemo();render();}if('serviceWorker' in navigator&&window.isSecureContext)navigator.serviceWorker.register('/sw.js').catch(console.warn);}
 boot();
