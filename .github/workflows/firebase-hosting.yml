@@ -22,9 +22,11 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
-      - name: Avisar si falta conectar Firebase
+      - name: Verificar conexión con Firebase
         if: env.FIREBASE_SERVICE_ACCOUNT == ''
-        run: echo "::notice::La publicación requiere conectar este repositorio con Firebase."
+        run: |
+          echo "::error::La publicación requiere conectar este repositorio con Firebase."
+          exit 1
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_EMPRENDIENDO_EN_PAREJA }}
       - uses: FirebaseExtended/action-hosting-deploy@v0
@@ -34,5 +36,4 @@ jobs:
         with:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_EMPRENDIENDO_EN_PAREJA }}
           projectId: emprendiendo-en-pareja
-          channelId: ${{ vars.PUBLICACION_ACTIVA == 'true' && 'live' || 'prueba' }}
-          expires: 1d
+          channelId: live
