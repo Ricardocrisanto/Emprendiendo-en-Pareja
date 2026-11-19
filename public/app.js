@@ -11,7 +11,6 @@ const fmtDate=d=>{try{return new Date(`${d}T12:00:00`).toLocaleDateString('es-MX
 const status=(stock)=>stock<=0?'<span class="tag bad">Agotado</span>':stock<=2?'<span class="tag warn">Pocas piezas</span>':'<span class="tag ok">Disponible</span>';
 let current='inicio', store, toastTimer;
 const sim={vestQty:5,jacketQty:5,vestPrice:320,jacketPrice:390,capital:4000,reserve:1000,min:10,discount:50,costPerSale:15,fixedCost:100};
-let draftLines=[];
 function saveLocal(){
  try{localStorage.setItem(STORAGE_KEY,JSON.stringify(store));}
  catch{
@@ -104,27 +103,93 @@ const field=(name,label,type='text',extra='')=>`<div class="field"><label for="f
 function dialogProduct(){showDialog('Nueva prenda',`<form id="product-form" class="form-grid">${field('name','Nombre del modelo','text','required maxlength="90" placeholder="Ej. Chaleco Humana"')}${field('sku','Código / SKU','text','required maxlength="40" placeholder="Ej. HUM-ROS-M"')}${field('size','Talla','text','required maxlength="20" placeholder="M"')}${field('color','Color','text','required maxlength="30" placeholder="Rosa"')}${field('category','Categoría','text','value="Ropa" maxlength="40"')}${field('price','Precio de venta ($)','number','min="0" step="0.01" required value="320"')}${field('listCost','Precio normal de compra ($)','number','min="0" step="0.01" value="270"')}
  <div class="field full"><p class="hint">La existencia inicia en cero. Después registra una compra para añadir piezas.</p></div><div class="field full"><div class="modal-actions"><button type="button" class="secondary" data-action="close">Cancelar</button><button type="submit" class="primary">Guardar prenda</button></div></div></form>`);}
 function dialogEditPrice(productId){const p=store.products.find(p=>p.id===productId);if(!p)return;showDialog('Editar precio de venta',`<form id="edit-price-form" class="form-grid"><p class="hint field full">${escapeHtml(p.name)} · ${escapeHtml(p.color)} ${escapeHtml(p.size)}</p><input type="hidden" name="productId" value="${escapeHtml(p.id)}">${field('price','Nuevo precio de venta ($)','number',`min="0" step="0.01" value="${p.price}" required`)}<div class="field full"><div class="modal-actions"><button type="button" class="secondary" data-action="close">Cancelar</button><button type="submit" class="primary">Guardar nuevo precio</button></div></div></form>`);}
-function dialogSale(){if(!store.products.some(p=>p.stock>0)){toast('Primero registra una prenda y su compra.');return;}
+function dialogSale(){if(!store.products.some(p=>p.stock>0)){toast('Primero registra una compra para añadir prendas al inventario.');return;}
  const options=store.products.filter(p=>p.stock>0).map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} · ${escapeHtml(p.color)} ${escapeHtml(p.size)} (${p.stock} pzas)</option>`).join('');
  showDialog('Registrar venta',`<form id="sale-form" class="form-grid"><div class="field full"><label>Prenda</label><select name="productId" id="sale-product">${options}</select></div>${field('date','Fecha de venta','date',`value="${today()}" required`)}${field('qty','Cantidad','number','min="1" step="1" value="1" required')}${field('price','Precio unitario de venta ($)','number','min="0" step="0.01" required')}${field('discount','Descuento total al cliente ($)','number','min="0" step="0.01" value="0" required')}${field('paidAmount','Cantidad cobrada ($)','number','min="0" step="0.01" required')}${field('customer','Cliente (opcional)','text','maxlength="70" placeholder="Nombre o referencia"')}<div class="field"><label>Canal</label><select name="channel"><option>Facebook</option><option>WhatsApp</option><option>Venta local</option><option>Otro</option></select></div>${field('shippingCollected','Envío cobrado al cliente ($)','number','min="0" step="0.01" value="0" required')}${field('deliveryCost','Costo de entrega ($)','number','min="0" step="0.01" value="0" required')}${field('packagingCost','Costo de empaque ($)','number','min="0" step="0.01" value="0" required')}<div class="field full"><p class="hint">Registra una venta ya confirmada y entregada. Puedes anotar un cobro parcial, pero el seguimiento de abonos adicionales quedará para una versión posterior.</p><div class="modal-actions"><button type="button" class="secondary" data-action="close">Cancelar</button><button class="primary" type="submit">Guardar venta</button></div></div></form>`);
  const s=document.querySelector('#sale-product');s.dispatchEvent(new Event('change',{bubbles:true}));
 }
-function purchaseLine(index,line={}){return `<div class="line-item"><div class="form-grid"><div class="field"><label>Prenda</label><select class="line-product">${store.products.map(p=>`<option value="${escapeHtml(p.id)}" ${line.productId===p.id?'selected':''}>${escapeHtml(p.name)} · ${escapeHtml(p.color)} ${escapeHtml(p.size)}</option>`).join('')}</select></div><div class="field"><label>Piezas</label><input class="line-qty" type="number" min="1" step="1" value="${line.qty||1}" required></div><div class="field"><label>Precio normal ($)</label><input class="line-price" type="number" min="0" step="0.01" value="${line.unitPrice??store.products[0]?.listCost??0}" required></div></div>${index>0?'<button type="button" class="remove-line" data-action="remove-line" data-index="'+index+'">Quitar esta línea</button>':''}</div>`;}
-function getPurchaseLines(){return [...document.querySelectorAll('.line-item')].map(e=>({productId:e.querySelector('.line-product').value,qty:num(e.querySelector('.line-qty').value),unitPrice:num(e.querySelector('.line-price').value)}));}
+function purchaseLine(index,line={}){
+ const newProduct=!line.productId;
+ const name='line-name-'+index, size='line-size-'+index, color='line-color-'+index, price='line-sale-price-'+index;
+ return `<div class="line-item">
+  <div class="form-grid">
+   <div class="field"><label for="line-product-${index}">Prenda</label><select id="line-product-${index}" class="line-product"><option value="">+ Nueva prenda</option>${store.products.map(p=>`<option value="${escapeHtml(p.id)}" ${line.productId===p.id?'selected':''}>${escapeHtml(p.name)} · ${escapeHtml(p.color)} ${escapeHtml(p.size)} (${escapeHtml(p.sku)})</option>`).join('')}</select></div>
+   <div class="field"><label for="line-qty-${index}">Piezas</label><input id="line-qty-${index}" class="line-qty" type="number" min="1" step="1" value="${escapeHtml(line.qty??1)}" required></div>
+   <div class="field"><label for="line-cost-${index}">Costo unitario antes del descuento ($)</label><input id="line-cost-${index}" class="line-price" type="number" min="0" step="0.01" value="${escapeHtml(line.unitPrice??'')}" required></div>
+  </div>
+  <div class="line-details" ${newProduct?'':'hidden'}>
+   <div class="form-grid">
+    <div class="field"><label for="${name}">Modelo</label><input id="${name}" class="line-name" maxlength="90" value="${escapeHtml(line.name)}" required ${newProduct?'':'disabled'}></div>
+    <div class="field"><label for="${size}">Talla</label><input id="${size}" class="line-size" maxlength="20" value="${escapeHtml(line.size)}" required ${newProduct?'':'disabled'}></div>
+    <div class="field"><label for="${color}">Color</label><input id="${color}" class="line-color" maxlength="30" value="${escapeHtml(line.color)}" required ${newProduct?'':'disabled'}></div>
+    <div class="field"><label for="${price}">Precio de venta ($)</label><input id="${price}" class="line-sale-price" type="number" min="0" step="0.01" value="${escapeHtml(line.price)}" required ${newProduct?'':'disabled'}></div>
+   </div>
+  </div>
+  ${index>0?`<button type="button" class="remove-line" data-action="remove-line" data-index="${index}">Quitar esta línea</button>`:''}
+ </div>`;
+}
+function getPurchaseLines(){
+ return [...document.querySelectorAll('#purchase-lines .line-item')].map(row=>({
+  productId:row.querySelector('.line-product').value,
+  qty:row.querySelector('.line-qty').value,
+  unitPrice:row.querySelector('.line-price').value,
+  name:row.querySelector('.line-name').value,
+  size:row.querySelector('.line-size').value,
+  color:row.querySelector('.line-color').value,
+  price:row.querySelector('.line-sale-price').value
+ }));
+}
 function updateOrderSummary(){const el=document.querySelector('#order-summary');if(!el)return;const lines=getPurchaseLines(),ship=num(document.querySelector('#order-shipping')?.value);const x=orderTotals(lines,store.settings.minimum,store.settings.discount,ship);el.innerHTML=`<div class="sumline"><span>${x.qty} piezas ${x.eligible?'· descuento aplicado':'· sin descuento'}</span><span>${money(x.total)}</span></div><p class="hint">Ahorro de promoción: ${money(x.savings)}. ${x.eligible?'Cumple mínimo.':`Faltan ${store.settings.minimum-x.qty} piezas para el mínimo supuesto.`}</p>`;}
-function dialogPurchase(){if(!store.products.length){toast('Primero registra al menos una prenda.');return;}draftLines=[{productId:store.products[0].id,qty:1,unitPrice:store.products[0].listCost}];showDialog('Nueva compra',`<form id="purchase-form"><div class="form-grid" style="margin-bottom:17px">${field('date','Fecha de recepción','date',`value="${today()}" required`)}${field('orderId','Folio de pedido','text',`value="PED-${String(Date.now()).slice(-6)}" required maxlength="60"`)}</div><div id="purchase-lines">${purchaseLine(0,draftLines[0])}</div><button class="secondary small" type="button" data-action="add-line">${icon('plus',14)} Otra prenda</button><div class="field" style="margin-top:15px"><label>Envío total del proveedor ($)</label><input name="shipping" id="order-shipping" type="number" min="0" step="0.01" value="0"></div><div id="order-summary" style="margin-top:14px"></div><p class="footnote">El descuento se aplicará automáticamente solo si el pedido completo cumple el mínimo configurado. El envío se distribuye por pieza y forma parte de su costo. Corrige los precios normales antes de guardar.</p><div class="modal-actions"><button class="secondary" type="button" data-action="close">Cancelar</button><button class="primary" type="submit">Registrar compra recibida</button></div></form>`);updateOrderSummary();}
+function dialogPurchase(){showDialog('Nueva compra',`<form id="purchase-form"><div class="form-grid" style="margin-bottom:17px">${field('date','Fecha de recepción','date',`value="${today()}" required`)}${field('orderId','Folio de pedido','text',`value="PED-${String(Date.now()).slice(-6)}" required maxlength="60"`)}</div><div id="purchase-lines">${purchaseLine(0)}</div><button class="secondary small" type="button" data-action="add-line">${icon('plus',14)} Otra prenda</button><div class="field" style="margin-top:15px"><label>Envío total del proveedor ($)</label><input name="shipping" id="order-shipping" type="number" min="0" step="0.01" value="0"></div><div id="order-summary" style="margin-top:14px"></div><p class="footnote">El descuento se aplicará automáticamente solo si el pedido completo cumple el mínimo configurado. El envío se distribuye por pieza y forma parte de su costo. Al guardar, las prendas nuevas se crean y todas las piezas se suman al inventario.</p><div class="modal-actions"><button class="secondary" type="button" data-action="close">Cancelar</button><button class="primary" type="submit">Registrar compra recibida</button></div></form>`);updateOrderSummary();}
 function dialogExpense(){showDialog('Registrar gasto',`<form id="expense-form" class="form-grid">${field('date','Fecha','date',`value="${today()}" required`)}<div class="field"><label>Categoría</label><select name="category">${CATEGORIES.map(v=>`<option>${v}</option>`).join('')}</select></div>${field('amount','Importe ($)','number','min="0.01" step="0.01" required')}<div class="field full">${field('note','Detalle (opcional)','text','maxlength="120" placeholder="Ej. bolsas para prendas"')}</div><div class="field full"><div class="modal-actions"><button type="button" class="secondary" data-action="close">Cancelar</button><button type="submit" class="primary">Guardar gasto</button></div></div></form>`);}
 async function addProduct(form){const p={sku:String(form.get('sku')).trim().toUpperCase(),name:String(form.get('name')).trim(),size:String(form.get('size')).trim(),color:String(form.get('color')).trim(),category:String(form.get('category')||'Ropa').trim(),price:rounded(form.get('price')),listCost:rounded(form.get('listCost')),stock:0,avgCost:0};if(store.products.some(x=>x.sku.toLowerCase()===p.sku.toLowerCase()))throw Error('Ya existe ese SKU. Usa uno diferente.');store.products.push({id:id(),...p});saveLocal();render();}
 async function savePrice(form){const p=store.products.find(p=>p.id===form.get('productId'));if(!p)throw Error('Producto inexistente.');const price=rounded(form.get('price'));if(price<0)throw Error('El precio no puede ser negativo.');p.price=price;saveLocal();render();}
 async function addExpense(form){const e={date:form.get('date'),category:form.get('category'),amount:rounded(form.get('amount')),note:String(form.get('note')||'').trim()};if(e.amount<=0)throw Error('El gasto debe ser mayor que cero.');store.expenses.push({id:id(),...e,recordedBy:activeProfile()?.name??null});saveLocal();render();}
-async function savePurchase(form){const lines=getPurchaseLines(), date=form.get('date'),orderId=String(form.get('orderId')).trim(),shipping=rounded(form.get('shipping'));if(!date||!orderId)throw Error('Completa fecha y folio.');if(lines.some(l=>!l.productId||l.qty<1||!Number.isInteger(l.qty)||l.unitPrice<0))throw Error('Revisa las cantidades y precios de compra.');if(new Set(lines.map(l=>l.productId)).size!==lines.length)throw Error('Agrupa las cantidades de la misma prenda en una sola línea.');const totals=orderTotals(lines,store.settings.minimum,store.settings.discount,shipping);if(lines.some(l=>l.unitPrice<totals.discount))throw Error('El descuento no puede superar el precio normal de la prenda.');const funds=derive(store);if(totals.total>funds.cash)throw Error('El pedido supera el efectivo disponible. Esta versión no registra compras a crédito.');if(totals.total>funds.available&&!confirm('La compra utiliza parte de tu reserva de efectivo. ¿Deseas continuar?'))throw Error('Compra cancelada. Tu reserva se mantiene.');
+async function savePurchase(form){
+ const date=form.get('date'), orderId=String(form.get('orderId')).trim(), shipping=rounded(form.get('shipping'));
+ if(!date||!orderId)throw Error('Completa fecha y folio.');
+ const lines=getPurchaseLines().map(line=>({...line,qty:Number(line.qty),unitPrice:line.unitPrice===''?NaN:Number(line.unitPrice)}));
+ if(!lines.length||lines.some(l=>!Number.isSafeInteger(l.qty)||l.qty<1||!Number.isFinite(l.unitPrice)||l.unitPrice<0))throw Error('Revisa las cantidades y costos de compra.');
+ const totals=orderTotals(lines,store.settings.minimum,store.settings.discount,shipping);
+ if(lines.some(l=>l.unitPrice<totals.discount))throw Error('El descuento no puede superar el precio normal de la prenda.');
  const costs=purchaseLineCosts(lines,totals);
- const items=lines.map((line,index)=>{
-  const product=store.products.find(p=>p.id===line.productId);
-  if(!product)throw Error('Producto no encontrado.');
-  return {productId:line.productId,productName:product.name,qty:line.qty,date,orderId,...costs[index]};
+ const newProducts=[];
+ const selectedIds=new Set();
+ const variantKey=p=>JSON.stringify([p.name,p.size,p.color].map(value=>String(value??'').trim().toLowerCase()));
+ const variantKeys=new Set(store.products.map(variantKey));
+ const recordedBy=activeProfile()?.name??null;
+ const entries=lines.map((line,index)=>{
+  let product=store.products.find(p=>p.id===line.productId);
+  if(line.productId){
+   if(!product)throw Error('Producto no encontrado.');
+   if(selectedIds.has(product.id))throw Error('Agrupa las cantidades de la misma prenda en una sola línea.');
+   selectedIds.add(product.id);
+  }else{
+   const name=line.name.trim(), size=line.size.trim(), color=line.color.trim(), price=Number(line.price);
+   if(!name||!size||!color||line.price===''||!Number.isFinite(price)||price<0)throw Error('Completa el modelo, la talla, el color y el precio de venta de cada prenda nueva.');
+   const productId=id();
+   product={id:productId,sku:`PRE-${productId.toUpperCase()}`,name,size,color,category:'Ropa',price:rounded(price),listCost:rounded(line.unitPrice),stock:0,avgCost:0};
+   const key=variantKey(product);
+   if(variantKeys.has(key))throw Error(`Ya hay una línea o una prenda con el modelo, talla y color de "${name}". Selecciona la prenda existente o agrupa las piezas.`);
+   variantKeys.add(key);
+   newProducts.push(product);
+  }
+  const item={id:id(),productId:product.id,productName:product.name,qty:line.qty,date,orderId,...costs[index],recordedBy};
+  return {product,item};
  });
- for(const item of items){const p=store.products.find(p=>p.id===item.productId);const newQty=p.stock+item.qty;p.avgCost=(p.stock*p.avgCost+item.total)/newQty;p.stock=newQty;store.purchases.push({id:id(),...item,recordedBy:activeProfile()?.name??null});}saveLocal();render();}
+ const funds=derive(store);
+ if(totals.total>funds.cash)throw Error('El pedido supera el efectivo disponible. Esta versión no registra compras a crédito.');
+ if(totals.total>funds.available&&!confirm('La compra utiliza parte de tu reserva de efectivo. ¿Deseas continuar?'))throw Error('Compra cancelada. Tu reserva se mantiene.');
+ store.products.push(...newProducts);
+ for(const {product,item} of entries){
+  const newQty=product.stock+item.qty;
+  product.avgCost=(product.stock*product.avgCost+item.total)/newQty;
+  product.stock=newQty;
+  store.purchases.push(item);
+ }
+ saveLocal();
+ render();
+}
 async function saveSale(form){const productId=form.get('productId'),product=store.products.find(p=>p.id===productId);if(!product)throw Error('Selecciona una prenda válida.');const qty=num(form.get('qty')),price=rounded(form.get('price')),discount=rounded(form.get('discount')),paidAmount=rounded(form.get('paidAmount')),shippingCollected=rounded(form.get('shippingCollected')),deliveryCost=rounded(form.get('deliveryCost')),packagingCost=rounded(form.get('packagingCost'));if(!Number.isInteger(qty)||qty<=0)throw Error('La cantidad debe ser un entero positivo.');if(qty>product.stock)throw Error(`Solo quedan ${product.stock} prendas disponibles.`);if([price,discount,paidAmount,shippingCollected,deliveryCost,packagingCost].some(v=>v<0))throw Error('Los importes no pueden ser negativos.');const total=rounded(price*qty-discount+shippingCollected);if(discount>rounded(price*qty)||paidAmount>total)throw Error('Revisa el descuento y el cobro: no pueden superar la venta.');
  const s={date:form.get('date'),productId,productName:product.name,size:product.size,color:product.color,qty,price,discount,paidAmount,shippingCollected,deliveryCost,packagingCost,customer:String(form.get('customer')||'').trim(),channel:form.get('channel'),status:'entregada',costAtSale:product.avgCost};
  product.stock-=qty;store.sales.push({id:id(),...s,recordedBy:activeProfile()?.name??null});saveLocal();render();}
@@ -133,13 +198,16 @@ function exportCSV(kind){const data=kind==='products'?store.products:kind==='sal
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 function exportAll(){const out={exportedAt:new Date().toISOString(),mode:'local',...store};download(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}),`respaldo-negocio-ropa-${today()}.json`);}
 function closeModal(){document.getElementById('modal')?.close();}
-async function actionClick(button){const action=button.dataset.action;if(action==='navigate'){current=button.dataset.view;render();window.scrollTo({top:0,behavior:'instant'});return;}if(action==='close'){closeModal();return;}if(action==='new-product')return dialogProduct();if(action==='edit-price')return dialogEditPrice(button.dataset.id);if(action==='new-sale')return dialogSale();if(action==='new-purchase')return dialogPurchase();if(action==='new-expense')return dialogExpense();if(action==='add-line'){const lines=getPurchaseLines();lines.push({productId:store.products[0].id,qty:1,unitPrice:store.products[0].listCost});document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='remove-line'){const lines=getPurchaseLines();lines.splice(num(button.dataset.index),1);document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='export')return exportCSV(button.dataset.kind);if(action==='export-all')return exportAll();}
+async function actionClick(button){const action=button.dataset.action;if(action==='navigate'){current=button.dataset.view;render();window.scrollTo({top:0,behavior:'instant'});return;}if(action==='close'){closeModal();return;}if(action==='new-product')return dialogProduct();if(action==='edit-price')return dialogEditPrice(button.dataset.id);if(action==='new-sale')return dialogSale();if(action==='new-purchase')return dialogPurchase();if(action==='new-expense')return dialogExpense();if(action==='add-line'){const lines=getPurchaseLines();lines.push({});document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='remove-line'){const lines=getPurchaseLines();lines.splice(num(button.dataset.index),1);document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='export')return exportCSV(button.dataset.kind);if(action==='export-all')return exportAll();}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;try{await actionClick(b);}catch(err){toast(errorMessage(err));console.error(err);}});
 document.addEventListener('change',e=>{if(e.target.id==='active-profile'){
   try{store.activeProfileId=e.target.value||null;saveLocal();render();}
   catch(err){toast(errorMessage(err));}
   return;
- }if(e.target.id==='sale-product'){const p=store.products.find(p=>p.id===e.target.value);if(p){const price=document.querySelector('#sale-form [name=price]'),paid=document.querySelector('#sale-form [name=paidAmount]');if(price)price.value=p.price;const f=price?.form;if(paid&&!f.dataset.paidTouched)paid.value=Math.max(0,rounded(p.price*num(f.elements.qty.value)-num(f.elements.discount.value)+num(f.elements.shippingCollected.value)));}}if(e.target.classList.contains('line-product')){const line=e.target.closest('.line-item'),p=store.products.find(x=>x.id===e.target.value);if(p)line.querySelector('.line-price').value=p.listCost;}if(e.target.closest('#purchase-form'))updateOrderSummary();});
+ }if(e.target.id==='sale-product'){const p=store.products.find(p=>p.id===e.target.value);if(p){const price=document.querySelector('#sale-form [name=price]'),paid=document.querySelector('#sale-form [name=paidAmount]');if(price)price.value=p.price;const f=price?.form;if(paid&&!f.dataset.paidTouched)paid.value=Math.max(0,rounded(p.price*num(f.elements.qty.value)-num(f.elements.discount.value)+num(f.elements.shippingCollected.value)));}}if(e.target.classList.contains('line-product')){const line=e.target.closest('.line-item'),p=store.products.find(x=>x.id===e.target.value);const details=line.querySelector('.line-details');
+  details.hidden=Boolean(e.target.value);
+  details.querySelectorAll('input').forEach(input=>{input.disabled=details.hidden;});
+  line.querySelector('.line-price').value=p?.listCost??'';}if(e.target.closest('#purchase-form'))updateOrderSummary();});
 document.addEventListener('input',e=>{if(e.target.dataset.sim){const k=e.target.dataset.sim;sim[k]=num(e.target.value);document.querySelector(`#simval-${k}`).textContent=['vestQty','jacketQty','min'].includes(k)?sim[k]:money(sim[k]);document.querySelector('#sim-result').innerHTML=simOutput();}if(e.target.id==='search'){const needle=e.target.value.trim().toLowerCase();document.querySelectorAll('tr[data-search]').forEach(tr=>tr.hidden=!tr.dataset.search.includes(needle));}if(e.target.closest('#purchase-form'))updateOrderSummary();if(e.target.closest('#sale-form')&&['price','qty','discount','shippingCollected'].includes(e.target.name)){const f=e.target.closest('form');if(!f.dataset.paidTouched){f.elements.paidAmount.value=Math.max(0,rounded(num(f.elements.qty.value)*num(f.elements.price.value)-num(f.elements.discount.value)+num(f.elements.shippingCollected.value)));}}if(e.target.name==='paidAmount'&&e.target.closest('#sale-form'))e.target.closest('form').dataset.paidTouched='1';});
 document.addEventListener('submit',async e=>{if(!['product-form','purchase-form','sale-form','expense-form','settings-form','profile-form','edit-price-form'].includes(e.target.id))return;e.preventDefault();const form=e.target,data=new FormData(form),btn=form.querySelector('[type=submit]');btn.disabled=true;try{switch(form.id){case'profile-form':addProfile(data);break;case'product-form':await addProduct(data);break;case'edit-price-form':await savePrice(data);break;case'purchase-form':await savePurchase(data);break;case'sale-form':await saveSale(data);break;case'expense-form':await addExpense(data);break;case'settings-form':await saveSettings(data);break;}if(form.id!=='profile-form'&&form.id!=='settings-form')closeModal();toast('Información guardada correctamente.');}catch(err){toast(errorMessage(err));console.error(err);}finally{if(btn.isConnected)btn.disabled=false;}});
 function boot(){
