@@ -73,8 +73,14 @@ Empezar por cobros posteriores, devoluciones y pedidos con varias prendas. Despu
 
 ## Actualizaciones automáticas con GitHub
 
-El archivo `.github/workflows/firebase-hosting.yml` ejecuta las pruebas y publica cada cambio de la rama `main` en Firebase Hosting. También se puede iniciar desde **Actions → Publicar en Firebase Hosting → Run workflow**. El flujo actualiza el sitio web y las PWA instaladas seguirán usando la misma dirección.
+El flujo de GitHub Actions ejecuta las pruebas y publica la rama `main` en Firebase Hosting. Para vincular las cuentas por primera vez, ejecuta esto en Cloud Shell con la cuenta propietaria del proyecto:
 
-1. Sube esta carpeta como raíz de un repositorio privado de GitHub. Incluye la carpeta `.github`.
-2. Vincula ese repositorio al proyecto **emprendiendo-en-pareja** con el asistente oficial `npx firebase-tools init hosting:github --project emprendiendo-en-pareja`. El asistente autoriza Firebase y GitHub y guarda la credencial como secreto `FIREBASE_SERVICE_ACCOUNT_EMPRENDIENDO_EN_PAREJA`. Conserva el flujo incluido en este paquete. Si el asistente genera flujos adicionales, revísalos antes de subirlos para evitar despliegues duplicados.
-4. Después de verificarla, en GitHub abre **Settings → Secrets and variables → Actions → Variables**, crea `PUBLICACION_ACTIVA` con el valor `true` y ejecuta nuevamente el flujo. Los siguientes cambios en `main` se publicarán en la URL definitiva de Hosting.
+```sh
+cd ~/Emprendiendo-en-Pareja
+git pull --ff-only
+npx --yes firebase-tools init hosting:github --project emprendiendo-en-pareja
+```
+
+Autoriza GitHub y elige `Ricardocrisanto/Emprendiendo-en-Pareja`. Responde **No** si el asistente pregunta por un script de compilación o por generar otro flujo de publicación en producción. El flujo de este repositorio ya contiene las pruebas y el despliegue. El asistente guarda la credencial de Firebase como un secreto en GitHub. Los archivos que genere en Cloud Shell pueden quedarse allí.
+
+En GitHub, abre **Actions → Publicar en Firebase Hosting → Run workflow**, selecciona `main` e inicia la primera ejecución. Una vez confirmada la publicación, los cambios posteriores en `main` se desplegarán en https://emprendiendo-en-pareja.web.app/ cuando pasen las pruebas.
