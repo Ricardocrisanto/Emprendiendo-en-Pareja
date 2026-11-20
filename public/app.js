@@ -1,5 +1,5 @@
-import {adText,facebookGroup,productPhotos,compressPhoto} from './ads.js';
-import {defaultSettings,sum,money,num,rounded,currentMonth,today,derive,purchaseTotals,purchaseLineCosts,simulation} from './core.js';
+import {adText,facebookGroup,productPhotos,compressPhoto} from './ads.js?v=11';
+import {defaultSettings,sum,money,num,rounded,currentMonth,today,derive,purchaseTotals,purchaseLineCosts,simulation} from './core.js?v=11';
 
 const STORAGE_KEY='emprendiendo-en-pareja-local-v1';
 const CATEGORIES=['Transporte','Empaques','Publicidad','Comisiones','Entregas','Otros'];
