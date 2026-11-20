@@ -11,7 +11,22 @@ const id=()=>`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)
 const fmtDate=d=>{try{return new Date(`${d}T12:00:00`).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});}catch{return d;}};
 const status=(stock)=>stock<=0?'<span class="tag bad">Agotado</span>':stock<=2?'<span class="tag warn">Pocas piezas</span>':'<span class="tag ok">Disponible</span>';
 let current='inicio', store, toastTimer;
-const sim={vestQty:5,jacketQty:5,vestPrice:320,jacketPrice:390,capital:4000,reserve:1000,min:10,discount:50,costPerSale:15,fixedCost:100};
+const sim={capital:4000,reserve:1000,min:10,discount:50};
+function defaultSimulationRows(){
+ return {
+  products:[{name:'Chaleco',qty:5,cost:270,price:320},{name:'Chamarra',qty:5,cost:319,price:390}],
+  variableExpenses:[{name:'Empaque',amount:15}],
+  fixedExpenses:[{name:'Publicidad',amount:100}]
+ };
+}
+const simRows={
+ products:{title:'Prendas del pedido',add:'Agregar prenda',empty:{name:'',qty:0,cost:0,price:0},fields:[
+  ['name','Nombre del modelo'],['qty','Piezas','1'],['cost','Precio de compra por pieza ($)','0.01'],['price','Precio de venta por pieza ($)','0.01']]},
+ variableExpenses:{title:'Gastos variables por pieza vendida',add:'Agregar gasto variable',empty:{name:'',amount:0},fields:[
+  ['name','Concepto'],['amount','Importe por pieza ($)','0.01']]},
+ fixedExpenses:{title:'Gastos fijos de los próximos 30 días',add:'Agregar gasto fijo',empty:{name:'',amount:0},fields:[
+  ['name','Concepto'],['amount','Importe fijo ($)','0.01']]}
+};
 function saveLocal(){
  try{localStorage.setItem(STORAGE_KEY,JSON.stringify(store));}
  catch{
@@ -24,7 +39,7 @@ function loadLocal(){
  const blank={products:[],purchases:[],sales:[],expenses:[],profiles:[],activeProfileId:null,settings:{...defaultSettings}};
  const saved=localStorage.getItem(STORAGE_KEY);
  store=saved?{...blank,...JSON.parse(saved)}:blank;
- Object.assign(sim,{capital:store.settings.capital,reserve:store.settings.reserve,min:store.settings.minimum,discount:store.settings.discount});
+ Object.assign(sim,{...defaultSimulationRows(),...store.simulationRows,capital:store.settings.capital,reserve:store.settings.reserve,min:store.settings.minimum,discount:store.settings.discount});
 }
 function activeProfile(){
  return store.profiles.find(profile=>profile.id===store.activeProfileId);
@@ -88,15 +103,41 @@ function viewInventory(){return `${head('Mis prendas','Cada talla y color tiene 
 function viewSales(){let arr=[...store.sales].sort((a,b)=>b.date.localeCompare(a.date));return `${head('Registro de ventas','Guarda una venta y el inventario se descuenta automáticamente.',`<button class="primary" data-action="new-sale">${icon('plus',16)} Nueva venta</button>`)}<div class="panel"><div class="panel-head"><h3 class="panel-title">Historial de ventas</h3><button class="secondary small" data-action="export" data-kind="sales">${icon('download',14)} Exportar CSV</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Producto</th><th>Cliente / Canal</th><th class="num">Piezas</th><th class="num">Total</th><th class="num">Cobrado</th><th>Estado</th></tr></thead><tbody>${arr.map(s=>`<tr><td>${fmtDate(s.date)}${s.recordedBy?`<small>${escapeHtml(s.recordedBy)}</small>`:''}</td><td><strong>${escapeHtml(s.productName)}</strong><small>${escapeHtml(s.size)} / ${escapeHtml(s.color)}</small></td><td>${escapeHtml(s.customer||'Mostrador')}<small>${escapeHtml(s.channel||'Local')}</small></td><td class="num">${s.qty}</td><td class="num">${money(s.qty*s.price-s.discount+s.shippingCollected)}</td><td class="num">${money(s.paidAmount)}</td><td>${s.status==='cancelada'?'<span class="tag bad">Cancelada</span>':s.paidAmount>=s.qty*s.price-s.discount+s.shippingCollected?'<span class="tag ok">Pagada</span>':'<span class="tag warn">Saldo pendiente</span>'}</td></tr>`).join('')}</tbody></table></div>${!arr.length?'<p class="empty">Aquí aparecerá tu primera venta. Puedes registrarla desde el botón superior.</p>':''}<p class="footnote">Versión inicial: registra ventas entregadas de un producto por operación. Los apartados, cobros posteriores y devoluciones se incorporarán después.</p></div>`;}
 function viewPurchases(){const arr=[...store.purchases].sort((a,b)=>b.date.localeCompare(a.date));return `${head('Mis compras','Cuando llega mercancía, registra el pedido para sumar las existencias.',`<button class="primary" data-action="new-purchase">${icon('plus',16)} Nueva compra</button>`)}<div class="panel"><div class="panel-head"><h3 class="panel-title">Compras realizadas</h3><button class="secondary small" data-action="export" data-kind="purchases">${icon('download',14)} Exportar CSV</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Pedido</th><th>Prenda</th><th class="num">Piezas</th><th class="num">Costo unitario real</th><th class="num">Total</th></tr></thead><tbody>${arr.map(p=>`<tr><td>${fmtDate(p.date)}${p.recordedBy?`<small>${escapeHtml(p.recordedBy)}</small>`:''}</td><td>${escapeHtml(p.orderId)}${p.purchaseType?`<small>${purchaseTypes[p.purchaseType]??''}</small>`:''}</td><td>${escapeHtml(p.productName)}</td><td class="num">${p.qty}</td><td class="num">${money(p.unitCost)}</td><td class="num">${money(p.total)}</td></tr>`).join('')}</tbody></table></div>${!arr.length?'<p class="empty">Todavía no tienes compras registradas.</p>':''}<p class="footnote">Puedes combinar modelos y tallas en un pedido. La mercancía se registra cuando ya la recibiste.</p></div>`;}
 function viewExpenses(){const arr=[...store.expenses].sort((a,b)=>b.date.localeCompare(a.date));return `${head('Gastos del negocio','Registra bolsas, entregas, transporte y otros pagos.',`<button class="primary" data-action="new-expense">${icon('plus',16)} Registrar gasto</button>`)}<div class="panel"><div class="panel-head"><h3 class="panel-title">Gastos registrados</h3><button class="secondary small" data-action="export" data-kind="expenses">${icon('download',14)} Exportar CSV</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th class="num">Monto</th></tr></thead><tbody>${arr.map(e=>`<tr><td>${fmtDate(e.date)}${e.recordedBy?`<small>${escapeHtml(e.recordedBy)}</small>`:''}</td><td><span class="tag">${escapeHtml(e.category)}</span></td><td>${escapeHtml(e.note||'—')}</td><td class="num"><strong>${money(e.amount)}</strong></td></tr>`).join('')}</tbody></table></div>${!arr.length?'<p class="empty">Todavía no has registrado gastos.</p>':''}<p class="footnote">El costo de compra de las prendas se registra en Compras, no aquí. Los importes de entrega y empaque que registraste en una venta también se descuentan allí: no los captures de nuevo como gasto.</p></div>`;}
-function simInputs(){return [
- ['capital','Capital inicial',2000,10000,500],['reserve','Reserva de efectivo',0,4000,100],['vestQty','Cantidad de chalecos',0,30,1],['jacketQty','Cantidad de chamarras',0,30,1],['vestPrice','Venta: chaleco',250,550,10],['jacketPrice','Venta: chamarra',280,650,10],['discount','Descuento por pieza',0,100,5],['min','Mínimo de mayoreo',1,30,1],['costPerSale','Gasto por pieza vendida',0,80,5],['fixedCost','Gastos fijos estimados',0,1000,50]
- ].map(([key,label,min,max,step])=>`<div class="field"><div class="form-row"><label for="sim-${key}">${label}</label><strong id="simval-${key}" style="font-size:12px">${['vestQty','jacketQty','min'].includes(key)?sim[key]:money(sim[key])}</strong></div><input class="simulation-slider" type="range" id="sim-${key}" data-sim="${key}" min="${min}" max="${max}" step="${step}" value="${sim[key]}"></div>`).join('');}
-function simOutput(){const r=simulation(sim);return `<div class="sim-kpis"><div class="sim-kpi"><small>Inversión en ropa</small><b>${money(r.investment)}</b></div><div class="sim-kpi"><small>Descuento aplicado</small><b>${money(r.discount)} <span style="font-size:10px">/pieza</span></b></div><div class="sim-kpi"><small>Efectivo tras compra</small><b>${money(r.capitalAfterPurchase)}</b></div></div>
+function simInputs(){
+ return [['capital','Capital inicial ($)','0.01'],['reserve','Reserva de efectivo ($)','0.01'],
+  ['discount','Descuento supuesto por pieza ($)','0.01'],['min','Mínimo para el descuento','1']]
+ .map(([key,label,step])=>field(`sim-${key}`,label,'number',`data-sim="${key}" min="${key==='min'?1:0}" step="${step}" value="${sim[key]}"`)).join('');
+}
+function simSections(){
+ return Object.entries(simRows).map(([section,config])=>`<section style="margin-top:20px">
+  <h3 class="panel-title">${config.title}</h3>
+  ${sim[section].map((row,index)=>`<div class="line-item" data-sim-section="${section}" data-sim-index="${index}">
+   <div class="form-grid">${config.fields.map(([key,label,step])=>field(`sim-${section}-${index}-${key}`,label,step?'number':'text',
+    `data-sim-field="${key}" ${step?`min="0" step="${step}"`:'maxlength="90"'} value="${escapeHtml(row[key])}"`)).join('')}</div>
+   <button type="button" class="remove-line" data-action="sim-remove">Quitar ${section==='products'?'prenda':'gasto'}</button>
+  </div>`).join('')}
+  <button type="button" class="secondary small" data-action="sim-add" data-section="${section}">${icon('plus',14)} ${config.add}</button>
+ </section>`).join('');
+}
+function saveSimulationRows(){
+ store.simulationRows={products:sim.products,variableExpenses:sim.variableExpenses,fixedExpenses:sim.fixedExpenses};
+ saveLocal();
+}
+function refreshSimulation(){
+ document.querySelector('#sim-result').innerHTML=simOutput();
+}
+function simOutput(){
+ const r=simulation(sim);
+ if(sim.products.some((product,index)=>product.qty>0&&r.costs[index]<0)){
+  return '<p class="tag bad">El descuento supera el precio de compra de una prenda. Ajusta el descuento o el precio para calcular los escenarios.</p>';
+ }
+ return `<div class="sim-kpis"><div class="sim-kpi"><small>Inversión en ropa</small><b>${money(r.investment)}</b></div><div class="sim-kpi"><small>Descuento aplicado</small><b>${money(r.discount)} <span style="font-size:10px">/pieza</span></b></div><div class="sim-kpi"><small>Efectivo tras compra</small><b>${money(r.capitalAfterPurchase)}</b></div></div>
+ <p class="price-hint">Gastos variables por pieza: ${money(r.variablePerUnit)} · Gastos fijos: ${money(r.fixed)}</p>
  <p class="price-hint">${r.count>=sim.min?`✓ El pedido de ${r.count} prendas alcanza el mínimo de ${sim.min}.`:`Faltan ${sim.min-r.count} prendas para aplicar el descuento supuesto.`}</p>
  ${r.canBuy?'<p class="tag ok">Compra dentro de tu presupuesto y reserva</p>':'<p class="tag bad">La compra compromete tu reserva o supera el capital</p>'}
  <div class="table-wrap" style="margin-top:18px"><table class="result-table"><thead><tr><th>Escenario</th><th>Vendidas</th><th>Ingresos</th><th>Utilidad</th></tr></thead><tbody>${r.scenarios.map(s=>`<tr><td><strong>${s.name}</strong></td><td>${s.sumSold}</td><td>${money(s.revenue)}</td><td style="color:${s.profit>=0?'var(--sage)':'var(--red)'};font-weight:800">${money(s.profit)}</td></tr>`).join('')}</tbody></table></div>
- <p class="footnote">Estos resultados son proyecciones, no ventas reales. Precio normal supuesto: chaleco $270 y chamarra $319. Las utilidades incluyen el gasto por pieza y los gastos fijos indicados, antes de impuestos.</p>`;}
-function viewSimulator(){return `${head('Simula tus ganancias','Mueve los controles y descubre cuánto invertir y cuánto podrías ganar.')}<div class="cols"><article class="panel"><div class="panel-head"><div><h3 class="panel-title">Ajusta tu primera compra</h3><p class="panel-sub">Los datos de aquí nunca alteran tus ventas reales</p></div></div><div class="form-grid">${simInputs()}</div></article><article class="panel"><div class="panel-head"><div><h3 class="panel-title">Resultado en tiempo real</h3><p class="panel-sub">Tres escenarios para los próximos 30 días</p></div></div><div id="sim-result">${simOutput()}</div></article></div>`;}
+ <p class="footnote">Estos resultados son proyecciones, no ventas reales. La utilidad descuenta el costo de las prendas vendidas, los gastos variables de cada venta y los gastos fijos. Se calcula antes de impuestos.</p>`;}
+function viewSimulator(){return `${head('Simula tus ganancias','Captura las prendas y los gastos para calcular cuánto invertir y cuánto podrías ganar.')}<div class="cols"><article class="panel"><div class="panel-head"><div><h3 class="panel-title">Ajusta tu primera compra</h3><p class="panel-sub">Los datos de aquí nunca alteran tus ventas reales</p></div></div><div class="form-grid">${simInputs()}</div><div id="sim-sections">${simSections()}</div></article><article class="panel"><div class="panel-head"><div><h3 class="panel-title">Resultado en tiempo real</h3><p class="panel-sub">Tres escenarios para los próximos 30 días</p></div></div><div id="sim-result">${simOutput()}</div></article></div>`;}
 function viewSettings(){return `${head('Configuración','Personaliza lo necesario y mantén la información clara.')}<div class="cols"><section class="panel"><h3 class="panel-title">Datos de mi negocio</h3><p class="panel-sub">Capital, reserva y valores iniciales del simulador</p><form id="settings-form" class="form-grid" style="margin-top:18px"><div class="field full"><label>Nombre del negocio</label><input name="businessName" required maxlength="50" value="${escapeHtml(store.settings.businessName)}"></div><div class="field"><label>Capital inicial ($)</label><input type="number" name="capital" min="0" step="0.01" required value="${store.settings.capital}"></div><div class="field"><label>Reserva ($)</label><input type="number" name="reserve" min="0" step="0.01" required value="${store.settings.reserve}"></div><div class="field"><label>Mínimo de piezas (simulador)</label><input type="number" name="minimum" min="1" step="1" required value="${store.settings.minimum}"></div><div class="field"><label>Descuento por pieza (simulador) ($)</label><input type="number" name="discount" min="0" step="0.01" required value="${store.settings.discount}"></div><div class="field full"><button class="primary" type="submit">Guardar configuración</button></div></form><p class="footnote">El mínimo y el descuento de esta sección solo se usan para simular escenarios.</p></section><section class="panel"><h3 class="panel-title">Perfiles y respaldo</h3>${profilePanel()}<p class="footnote">Exporta un respaldo para conservar una copia de los registros de este navegador.</p><div class="row-gap"><button type="button" class="secondary" data-action="export-all">${icon('download',16)} Exportar respaldo</button></div><div style="margin-top:25px"><h3 class="panel-title">Identidad visual</h3><p class="panel-sub">Paleta boutique</p><div class="row-gap" style="margin-top:12px">${['#9B5268','#F8F5F1','#27242B','#B79E8C','#638477'].map(c=>`<span title="${c}" style="display:inline-block;width:33px;height:33px;border-radius:9px;background:${c};border:1px solid #EAE3DF"></span>`).join('')}</div></div></section></div>`;}
 function render(){if(!stateReady())return;const views={inicio:viewDashboard,ventas:viewSales,inventario:viewInventory,compras:viewPurchases,gastos:viewExpenses,simulador:viewSimulator,ajustes:viewSettings};document.querySelector('#app').innerHTML=shell((views[current]||viewDashboard)());}
 function showDialog(title,body){let d=document.getElementById('modal');if(!d){d=document.createElement('dialog');d.id='modal';d.className='modal';document.body.append(d);}d.innerHTML=`<div class="modal-head"><h2>${title}</h2><button class="xclose" data-action="close" type="button" aria-label="Cerrar">×</button></div><div class="modal-body">${body}</div>`;d.showModal();}
@@ -332,7 +373,17 @@ async function prepareAd(productId){
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 function exportAll(){const out={exportedAt:new Date().toISOString(),mode:'local',...store};download(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}),`respaldo-negocio-ropa-${today()}.json`);}
 function closeModal(){document.getElementById('modal')?.close();}
-async function actionClick(button){const action=button.dataset.action;if(action==='navigate'){current=button.dataset.view;render();window.scrollTo({top:0,behavior:'instant'});return;}if(action==='close'){closeModal();return;}if(action==='new-product')return dialogProduct();if(action==='prepare-ad')return prepareAd(button.dataset.id);if(action==='edit-price')return dialogEditPrice(button.dataset.id);if(action==='new-sale')return dialogSale();if(action==='new-purchase')return dialogPurchase();if(action==='new-expense')return dialogExpense();if(action==='add-line'){const lines=getPurchaseLines();lines.push({});document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='remove-line'){const lines=getPurchaseLines();lines.splice(num(button.dataset.index),1);document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='export')return exportCSV(button.dataset.kind);if(action==='export-all')return exportAll();}
+async function actionClick(button){const action=button.dataset.action;if(action==='navigate'){current=button.dataset.view;render();window.scrollTo({top:0,behavior:'instant'});return;}if(action==='close'){closeModal();return;}if(action==='new-product')return dialogProduct();if(action==='sim-add'||action==='sim-remove'){
+ const row=button.closest('[data-sim-section]');
+ const section=row?.dataset.simSection??button.dataset.section;
+ if(action==='sim-add')sim[section].push({...simRows[section].empty});
+ else sim[section].splice(Number(row.dataset.simIndex),1);
+ saveSimulationRows();
+ document.querySelector('#sim-sections').innerHTML=simSections();
+ refreshSimulation();
+ if(action==='sim-add')document.querySelector(`[data-sim-section="${section}"][data-sim-index="${sim[section].length-1}"] input`)?.focus();
+ return;
+}if(action==='prepare-ad')return prepareAd(button.dataset.id);if(action==='edit-price')return dialogEditPrice(button.dataset.id);if(action==='new-sale')return dialogSale();if(action==='new-purchase')return dialogPurchase();if(action==='new-expense')return dialogExpense();if(action==='add-line'){const lines=getPurchaseLines();lines.push({});document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='remove-line'){const lines=getPurchaseLines();lines.splice(num(button.dataset.index),1);document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='export')return exportCSV(button.dataset.kind);if(action==='export-all')return exportAll();}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;try{await actionClick(b);}catch(err){toast(errorMessage(err));console.error(err);}});
 document.addEventListener('change',e=>{if(e.target.id==='active-profile'){
   try{store.activeProfileId=e.target.value||null;saveLocal();render();}
@@ -342,7 +393,18 @@ document.addEventListener('change',e=>{if(e.target.id==='active-profile'){
   details.hidden=Boolean(e.target.value);
   details.querySelectorAll('input').forEach(input=>{input.disabled=details.hidden;});
   line.querySelector('.line-price').value=p?.listCost??'';}if(e.target.closest('#purchase-form'))updateOrderSummary();});
-document.addEventListener('input',e=>{if(e.target.dataset.sim){const k=e.target.dataset.sim;sim[k]=num(e.target.value);document.querySelector(`#simval-${k}`).textContent=['vestQty','jacketQty','min'].includes(k)?sim[k]:money(sim[k]);document.querySelector('#sim-result').innerHTML=simOutput();}if(e.target.id==='search'){const needle=e.target.value.trim().toLowerCase();document.querySelectorAll('tr[data-search]').forEach(tr=>tr.hidden=!tr.dataset.search.includes(needle));}if(e.target.closest('#purchase-form'))updateOrderSummary();if(e.target.closest('#sale-form')&&['price','qty','discount','shippingCollected'].includes(e.target.name)){const f=e.target.closest('form');if(!f.dataset.paidTouched){f.elements.paidAmount.value=Math.max(0,rounded(num(f.elements.qty.value)*num(f.elements.price.value)-num(f.elements.discount.value)+num(f.elements.shippingCollected.value)));}}if(e.target.name==='paidAmount'&&e.target.closest('#sale-form'))e.target.closest('form').dataset.paidTouched='1';});
+document.addEventListener('input',e=>{if(e.target.dataset.sim){
+ const key=e.target.dataset.sim;
+ sim[key]=key==='min'?Math.max(1,Math.floor(num(e.target.value))):Math.max(0,rounded(e.target.value));
+ refreshSimulation();
+}
+if(e.target.dataset.simField){
+ const row=e.target.closest('[data-sim-section]'), key=e.target.dataset.simField;
+ const value=key==='name'?e.target.value:key==='qty'?Math.max(0,Math.floor(num(e.target.value))):Math.max(0,rounded(e.target.value));
+ sim[row.dataset.simSection][Number(row.dataset.simIndex)][key]=value;
+ try{saveSimulationRows();refreshSimulation();}
+ catch(error){toast(errorMessage(error));}
+}if(e.target.id==='search'){const needle=e.target.value.trim().toLowerCase();document.querySelectorAll('tr[data-search]').forEach(tr=>tr.hidden=!tr.dataset.search.includes(needle));}if(e.target.closest('#purchase-form'))updateOrderSummary();if(e.target.closest('#sale-form')&&['price','qty','discount','shippingCollected'].includes(e.target.name)){const f=e.target.closest('form');if(!f.dataset.paidTouched){f.elements.paidAmount.value=Math.max(0,rounded(num(f.elements.qty.value)*num(f.elements.price.value)-num(f.elements.discount.value)+num(f.elements.shippingCollected.value)));}}if(e.target.name==='paidAmount'&&e.target.closest('#sale-form'))e.target.closest('form').dataset.paidTouched='1';});
 document.addEventListener('submit',async e=>{if(!['product-form','purchase-form','sale-form','expense-form','settings-form','profile-form','edit-price-form'].includes(e.target.id))return;e.preventDefault();const form=e.target,data=new FormData(form),btn=form.querySelector('[type=submit]');btn.disabled=true;try{switch(form.id){case'profile-form':addProfile(data);break;case'product-form':await addProduct(data);break;case'edit-price-form':await savePrice(data);break;case'purchase-form':await savePurchase(data);break;case'sale-form':await saveSale(data);break;case'expense-form':await addExpense(data);break;case'settings-form':await saveSettings(data);break;}if(form.id!=='profile-form'&&form.id!=='settings-form')closeModal();toast('Información guardada correctamente.');}catch(err){toast(errorMessage(err));console.error(err);}finally{if(btn.isConnected)btn.disabled=false;}});
 function boot(){
  try{loadLocal();render();}

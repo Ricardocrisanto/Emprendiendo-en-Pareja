@@ -62,23 +62,28 @@ export function allocateUnits(totalQty,rate,quantities){
  return out;
 }
 export function simulation(p){
- const quantities=[num(p.vestQty),num(p.jacketQty)];
+ const products=p.products??[
+  {qty:p.vestQty,cost:270,price:p.vestPrice},
+  {qty:p.jacketQty,cost:319,price:p.jacketPrice}
+ ];
+ const quantities=products.map(product=>Math.max(0,Math.floor(num(product.qty))));
  const count=sum(quantities), minimum=num(p.min), discount=count>=minimum?num(p.discount):0;
- const costs=[270-discount,319-discount];
- const prices=[num(p.vestPrice),num(p.jacketPrice)];
+ const costs=products.map(product=>rounded(num(product.cost)-discount));
+ const prices=products.map(product=>num(product.price));
+ const variablePerUnit=rounded(Array.isArray(p.variableExpenses)?sum(p.variableExpenses.map(expense=>expense.amount)):num(p.costPerSale));
+ const fixed=rounded(Array.isArray(p.fixedExpenses)?sum(p.fixedExpenses.map(expense=>expense.amount)):num(p.fixedCost));
  const investment=rounded(sum(quantities.map((q,i)=>q*costs[i])));
  const scenarios=[{name:'Conservador',rate:.4},{name:'Intermedio',rate:.7},{name:'Favorable',rate:1}].map(s=>{
    const sold=allocateUnits(count,s.rate,quantities);
    const revenue=rounded(sum(sold.map((q,i)=>q*prices[i])));
    const soldCost=rounded(sum(sold.map((q,i)=>q*costs[i])));
-   const variable=rounded(sum(sold)*num(p.costPerSale));
-   const fixed=num(p.fixedCost);
+   const variable=rounded(sum(sold)*variablePerUnit);
    const profit=rounded(revenue-soldCost-variable-fixed);
    const leftCost=rounded(investment-soldCost);
    const cash=rounded(num(p.capital)-investment+revenue-variable-fixed);
    return {...s,sold,sumSold:sum(sold),revenue,soldCost,variable,fixed,profit,leftCost,cash};
  });
- return {count,discount,costs,prices,investment,canBuy: investment<=num(p.capital)-num(p.reserve),capitalAfterPurchase:rounded(num(p.capital)-investment),scenarios};
+ return {count,discount,costs,prices,investment,variablePerUnit,fixed,canBuy: investment<=num(p.capital)-num(p.reserve),capitalAfterPurchase:rounded(num(p.capital)-investment),scenarios};
 }
 export function starterDemo(){
  const a='sku-hm',b='sku-hg',c='sku-lm',d='sku-lg';
