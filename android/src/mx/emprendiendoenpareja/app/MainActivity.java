@@ -7,7 +7,10 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
+import android.util.Base64;
 import android.webkit.URLUtil;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -28,9 +31,11 @@ public final class MainActivity extends Activity {
     private static final String HOST = "emprendiendo-en-pareja.web.app";
     private static final String URL = "https://" + HOST + "/";
     private static final String KEY = "'emprendiendo-en-pareja-local-v1'";
-    private static final int IMPORT = 1, EXPORT = 2, MAX_BACKUP = 5 * 1024 * 1024;
+    private static final int IMPORT = 1, EXPORT = 2, PHOTO = 3, MAX_BACKUP = 5 * 1024 * 1024;
     private WebView web;
     private String exportData;
+    private ValueCallback<Uri[]> photoCallback;
+    private boolean exportIsBase64;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -65,12 +70,41 @@ public final class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return request.isForMainFrame() && !trusted(request.getUrl());
+                if (!request.isForMainFrame() || trusted(request.getUrl())) return false;
+                Uri target = request.getUrl();
+                if ("https".equals(target.getScheme()) && "www.facebook.com".equals(target.getHost())
+                    && target.getPort() == -1 && target.getUserInfo() == null
+                    && target.getPath() != null && target.getPath().matches("/groups/(?:[a-zA-Z0-9._-]+/)?")) {
+                    try { startActivity(new Intent(Intent.ACTION_VIEW, target)); }
+                    catch (android.content.ActivityNotFoundException error) { message("No se pudo abrir Facebook."); }
+                }
+                return true;
+            }
+        });
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (!pageReady()) return false;
+                if (photoCallback != null) photoCallback.onReceiveValue(null);
+                photoCallback = callback;
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("image/*");
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
+                try { startActivityForResult(Intent.createChooser(intent, "Seleccionar fotos"), PHOTO); }
+                catch (android.content.ActivityNotFoundException error) {
+                    photoCallback = null;
+                    callback.onReceiveValue(null);
+                    message("No se pudo abrir la galería.");
+                }
+                return true;
             }
         });
         web.setDownloadListener((url, agent, disposition, mime, length) ->
             downloadBlob(url, URLUtil.guessFileName(url, disposition, mime), mime));
-        if (state != null) exportData = state.getString("exportData");
+        if (state != null) {
+            exportData = state.getString("exportData");
+            exportIsBase64 = state.getBoolean("exportIsBase64");
+        }
         web.loadUrl(URL);
     }
 
@@ -107,7 +141,9 @@ public final class MainActivity extends Activity {
     private void downloadBlob(String url, String filename, String mime) {
         if (!pageReady() || url == null || !url.startsWith("blob:" + URL)) return;
         web.evaluateJavascript("window.__parejaDownload=null;fetch(" + JSONObject.quote(url)
-            + ").then(r=>r.text()).then(t=>{window.__parejaDownload=t}).catch(()=>{window.__parejaDownload=false});", ignored ->
+            + ").then(r=>r.blob()).then(b=>{const f=new FileReader();"
+            + "f.onload=()=>{window.__parejaDownload=f.result};f.onerror=()=>{window.__parejaDownload=false};"
+            + "f.readAsDataURL(b)}).catch(()=>{window.__parejaDownload=false});", ignored ->
             readDownload(filename, mime, 20));
     }
 
@@ -117,7 +153,9 @@ public final class MainActivity extends Activity {
             String data = asString(result);
             if (data != null) {
                 web.evaluateJavascript("delete window.__parejaDownload", null);
-                saveFile(data, filename, mime);
+                int separator = data.indexOf(',');
+                if (separator < 0) { message("No se pudo preparar el archivo."); return; }
+                saveFile(data.substring(separator + 1), filename, mime, true);
             } else if ("null".equals(result) && attempts > 0) {
                 web.postDelayed(() -> readDownload(filename, mime, attempts - 1), 100);
             } else message("No se pudo preparar el archivo.");
@@ -132,7 +170,12 @@ public final class MainActivity extends Activity {
     }
 
     private void saveFile(String data, String filename, String mime) {
+        saveFile(data, filename, mime, false);
+    }
+
+    private void saveFile(String data, String filename, String mime, boolean encoded) {
         exportData = data;
+        exportIsBase64 = encoded;
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType(mime == null ? "text/plain" : mime.split(";")[0]);
@@ -143,13 +186,25 @@ public final class MainActivity extends Activity {
     @Override protected void onActivityResult(int request, int result, Intent intent) {
         super.onActivityResult(request, result, intent);
         Uri file = result == RESULT_OK && intent != null ? intent.getData() : null;
-        if (request == EXPORT) {
+        if (request == PHOTO) {
+            ValueCallback<Uri[]> callback = photoCallback;
+            photoCallback = null;
+            if (callback == null) return;
+            android.content.ClipData selection = result == RESULT_OK && intent != null ? intent.getClipData() : null;
+            if (selection == null) {
+                callback.onReceiveValue(file == null ? null : new Uri[]{file});
+            } else {
+                Uri[] photos = new Uri[selection.getItemCount()];
+                for (int i = 0; i < photos.length; i++) photos[i] = selection.getItemAt(i).getUri();
+                callback.onReceiveValue(photos);
+            }
+        } else if (request == EXPORT) {
             String data = exportData;
             exportData = null;
             if (file == null || data == null) return;
             try (OutputStream output = getContentResolver().openOutputStream(file, "wt")) {
                 if (output == null) throw new IllegalStateException();
-                output.write(data.getBytes(StandardCharsets.UTF_8));
+                output.write(exportIsBase64 ? Base64.decode(data, Base64.DEFAULT) : data.getBytes(StandardCharsets.UTF_8));
                 message("Archivo guardado.");
             } catch (Exception error) { message("No se pudo guardar el archivo."); }
         } else if (request == IMPORT && file != null) {
@@ -193,7 +248,10 @@ public final class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
-        if (exportData != null && exportData.length() < 100000) state.putString("exportData", exportData);
+        if (exportData != null && exportData.length() < 250000) {
+            state.putString("exportData", exportData);
+            state.putBoolean("exportIsBase64", exportIsBase64);
+        }
     }
 
     private void message(String text) { Toast.makeText(this, text, Toast.LENGTH_LONG).show(); }

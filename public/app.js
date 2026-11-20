@@ -1,3 +1,4 @@
+import {adText,facebookGroup,productPhotos,compressPhoto} from './ads.js';
 import {defaultSettings,sum,money,num,rounded,currentMonth,today,derive,orderTotals,purchaseLineCosts,simulation} from './core.js';
 
 const STORAGE_KEY='emprendiendo-en-pareja-local-v1';
@@ -83,7 +84,7 @@ function viewDashboard(){const m=derive(store);const totalProducts=store.product
  <p class="hint">Reserva que elegiste: <strong>${money(reserve)}</strong>. La utilidad y el efectivo no son lo mismo.</p></article></section>
  <section class="panel" style="margin-top:17px"><div class="panel-head"><div><h3 class="panel-title">Acciones rápidas</h3><p class="panel-sub">Registra solo lo necesario</p></div></div><div class="two-actions"><button class="action-card" data-action="new-purchase"><span class="circle">${icon('bag')}</span> Nueva compra</button><button class="action-card" data-action="new-expense"><span class="circle">${icon('wallet')}</span> Registrar gasto</button></div></section>`;
 }
-function viewInventory(){return `${head('Mis prendas','Cada talla y color tiene su propia existencia.',`<button class="primary" data-action="new-product">${icon('plus',16)} Nueva prenda</button>`)}<div class="panel"><div class="toolbar"><span class="hint">${store.products.length} variantes registradas</span><input type="search" id="search" placeholder="Buscar modelo, talla o SKU…" aria-label="Buscar productos"></div><div class="table-wrap"><table class="table"><thead><tr><th>Prenda</th><th>SKU</th><th>Talla y color</th><th class="num">Existencia</th><th class="num">Costo promedio</th><th class="num">Precio venta</th><th>Estado</th></tr></thead><tbody>${store.products.map(p=>`<tr data-search="${escapeHtml([p.name,p.sku,p.color,p.size].join(' ').toLowerCase())}"><td><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category||'Ropa')}</small></td><td>${escapeHtml(p.sku)}</td><td>${escapeHtml(p.size)} / ${escapeHtml(p.color)}</td><td class="num"><strong>${p.stock}</strong></td><td class="num">${money(p.stock>0?p.avgCost:p.listCost)}</td><td class="num">${money(p.price)} <button class="ghost small" data-action="edit-price" data-id="${escapeHtml(p.id)}" title="Cambiar precio de venta">Editar</button></td><td>${status(p.stock)}</td></tr>`).join('')}</tbody></table></div>${store.products.length?'':'<p class="empty">Aún no tienes prendas. Agrega una para registrar tu primera compra.</p>'}<p class="footnote">Las existencias aumentan con compras y disminuyen con ventas. No se editan manualmente.</p></div>`;}
+function viewInventory(){return `${head('Mis prendas','Cada talla y color tiene su propia existencia.',`<button class="primary" data-action="new-product">${icon('plus',16)} Nueva prenda</button>`)}<div class="panel"><div class="toolbar"><span class="hint">${store.products.length} variantes registradas</span><input type="search" id="search" placeholder="Buscar modelo, talla o SKU…" aria-label="Buscar productos"></div><div class="table-wrap"><table class="table"><thead><tr><th>Prenda</th><th>SKU</th><th>Talla y color</th><th class="num">Existencia</th><th class="num">Costo promedio</th><th class="num">Precio venta</th><th>Estado</th></tr></thead><tbody>${store.products.map(p=>`<tr data-search="${escapeHtml([p.name,p.sku,p.color,p.size].join(' ').toLowerCase())}"><td><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category||'Ropa')}</small><button class="secondary small" data-action="prepare-ad" data-id="${escapeHtml(p.id)}">Preparar anuncio</button></td><td>${escapeHtml(p.sku)}</td><td>${escapeHtml(p.size)} / ${escapeHtml(p.color)}</td><td class="num"><strong>${p.stock}</strong></td><td class="num">${money(p.stock>0?p.avgCost:p.listCost)}</td><td class="num">${money(p.price)} <button class="ghost small" data-action="edit-price" data-id="${escapeHtml(p.id)}" title="Cambiar precio de venta">Editar</button></td><td>${status(p.stock)}</td></tr>`).join('')}</tbody></table></div>${store.products.length?'':'<p class="empty">Aún no tienes prendas. Agrega una para registrar tu primera compra.</p>'}<p class="footnote">Las existencias aumentan con compras y disminuyen con ventas. No se editan manualmente.</p></div>`;}
 function viewSales(){let arr=[...store.sales].sort((a,b)=>b.date.localeCompare(a.date));return `${head('Registro de ventas','Guarda una venta y el inventario se descuenta automáticamente.',`<button class="primary" data-action="new-sale">${icon('plus',16)} Nueva venta</button>`)}<div class="panel"><div class="panel-head"><h3 class="panel-title">Historial de ventas</h3><button class="secondary small" data-action="export" data-kind="sales">${icon('download',14)} Exportar CSV</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Producto</th><th>Cliente / Canal</th><th class="num">Piezas</th><th class="num">Total</th><th class="num">Cobrado</th><th>Estado</th></tr></thead><tbody>${arr.map(s=>`<tr><td>${fmtDate(s.date)}${s.recordedBy?`<small>${escapeHtml(s.recordedBy)}</small>`:''}</td><td><strong>${escapeHtml(s.productName)}</strong><small>${escapeHtml(s.size)} / ${escapeHtml(s.color)}</small></td><td>${escapeHtml(s.customer||'Mostrador')}<small>${escapeHtml(s.channel||'Local')}</small></td><td class="num">${s.qty}</td><td class="num">${money(s.qty*s.price-s.discount+s.shippingCollected)}</td><td class="num">${money(s.paidAmount)}</td><td>${s.status==='cancelada'?'<span class="tag bad">Cancelada</span>':s.paidAmount>=s.qty*s.price-s.discount+s.shippingCollected?'<span class="tag ok">Pagada</span>':'<span class="tag warn">Saldo pendiente</span>'}</td></tr>`).join('')}</tbody></table></div>${!arr.length?'<p class="empty">Aquí aparecerá tu primera venta. Puedes registrarla desde el botón superior.</p>':''}<p class="footnote">Versión inicial: registra ventas entregadas de un producto por operación. Los apartados, cobros posteriores y devoluciones se incorporarán después.</p></div>`;}
 function viewPurchases(){const arr=[...store.purchases].sort((a,b)=>b.date.localeCompare(a.date));return `${head('Mis compras','Cuando llega mercancía, registra el pedido para sumar las existencias.',`<button class="primary" data-action="new-purchase">${icon('plus',16)} Nueva compra</button>`)}<div class="panel"><div class="panel-head"><h3 class="panel-title">Compras realizadas</h3><button class="secondary small" data-action="export" data-kind="purchases">${icon('download',14)} Exportar CSV</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Pedido</th><th>Prenda</th><th class="num">Piezas</th><th class="num">Costo unitario real</th><th class="num">Total</th></tr></thead><tbody>${arr.map(p=>`<tr><td>${fmtDate(p.date)}${p.recordedBy?`<small>${escapeHtml(p.recordedBy)}</small>`:''}</td><td>${escapeHtml(p.orderId)}</td><td>${escapeHtml(p.productName)}</td><td class="num">${p.qty}</td><td class="num">${money(p.unitCost)}</td><td class="num">${money(p.total)}</td></tr>`).join('')}</tbody></table></div>${!arr.length?'<p class="empty">Todavía no tienes compras registradas.</p>':''}<p class="footnote">En un pedido puedes combinar modelos y tallas para alcanzar el mínimo de descuento configurado. La mercancía se registra cuando ya la recibiste.</p></div>`;}
 function viewExpenses(){const arr=[...store.expenses].sort((a,b)=>b.date.localeCompare(a.date));return `${head('Gastos del negocio','Registra bolsas, entregas, transporte y otros pagos.',`<button class="primary" data-action="new-expense">${icon('plus',16)} Registrar gasto</button>`)}<div class="panel"><div class="panel-head"><h3 class="panel-title">Gastos registrados</h3><button class="secondary small" data-action="export" data-kind="expenses">${icon('download',14)} Exportar CSV</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th class="num">Monto</th></tr></thead><tbody>${arr.map(e=>`<tr><td>${fmtDate(e.date)}${e.recordedBy?`<small>${escapeHtml(e.recordedBy)}</small>`:''}</td><td><span class="tag">${escapeHtml(e.category)}</span></td><td>${escapeHtml(e.note||'—')}</td><td class="num"><strong>${money(e.amount)}</strong></td></tr>`).join('')}</tbody></table></div>${!arr.length?'<p class="empty">Todavía no has registrado gastos.</p>':''}<p class="footnote">El costo de compra de las prendas se registra en Compras, no aquí. Los importes de entrega y empaque que registraste en una venta también se descuentan allí: no los captures de nuevo como gasto.</p></div>`;}
@@ -195,10 +196,102 @@ async function saveSale(form){const productId=form.get('productId'),product=stor
  product.stock-=qty;store.sales.push({id:id(),...s,recordedBy:activeProfile()?.name??null});saveLocal();render();}
 async function saveSettings(form){const s={businessName:String(form.get('businessName')||'Emprendiendo en Pareja').trim(),capital:rounded(form.get('capital')),reserve:rounded(form.get('reserve')),minimum:num(form.get('minimum')),discount:rounded(form.get('discount'))};if(s.capital<0||s.reserve<0||s.minimum<1||s.discount<0||!Number.isInteger(s.minimum))throw Error('Revisa los valores de configuración.');store.settings=s;saveLocal();Object.assign(sim,{capital:s.capital,reserve:s.reserve,min:s.minimum,discount:s.discount});render();}
 function exportCSV(kind){const data=kind==='products'?store.products:kind==='sales'?store.sales:kind==='purchases'?store.purchases:store.expenses;const keys=[...new Set(data.flatMap(x=>Object.keys(x)))];if(!keys.length){toast('No hay registros para exportar.');return;}const csv='\uFEFF'+[keys.join(','),...data.map(r=>keys.map(k=>'"'+String(typeof r[k]==='string'&&/^[\s]*[=+@-]|^[\t\r\n]/.test(r[k])?"'"+r[k]:r[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');download(new Blob([csv],{type:'text/csv;charset=utf-8'}),`${kind}-${today()}.csv`);}
+
+async function prepareAd(productId){
+ const product=store.products.find(p=>p.id===productId);
+ if(!product)return;
+ showDialog('Preparar anuncio',`
+ <div class="field"><label for="ad-text">Texto para Facebook</label><textarea id="ad-text" rows="6">${escapeHtml(adText(product,money(product.price)))}</textarea></div>
+ <button type="button" class="primary small" id="copy-ad">Copiar texto</button>
+ <div class="field" style="margin-top:16px"><label for="ad-files">Agregar fotos de la prenda</label><input type="file" id="ad-files" accept="image/*" multiple></div>
+ <p class="hint">Hasta tres fotos por prenda. Se guardan en este dispositivo. Guarda las que quieras adjuntar.</p>
+ <div id="ad-photos" class="ad-photos" aria-live="polite"></div>
+ <div class="field" style="margin-top:16px"><label for="ad-group">Enlace del grupo de Facebook</label><input type="url" id="ad-group" placeholder="https://www.facebook.com/groups/…"></div>
+ <div class="field"><label for="ad-groups">Grupos guardados</label><select id="ad-groups"></select></div>
+ <button type="button" class="secondary small" id="ad-save-group">Guardar grupo</button>
+ <a class="secondary small" id="ad-open-group" href="https://www.facebook.com/groups/">Abrir Facebook</a>
+ <p class="hint">En Facebook pega el texto, adjunta las fotos y publica.</p>`);
+ const modal=document.querySelector('#modal'), photosHolder=modal.querySelector('#ad-photos');
+ const ad=modal.querySelector('#ad-text'), picker=modal.querySelector('#ad-files');
+ const group=modal.querySelector('#ad-group'), groups=modal.querySelector('#ad-groups'), open=modal.querySelector('#ad-open-group');
+ let photos=[];
+ function groupOptions(){
+  const stored=(store.adGroups??[]).map(facebookGroup).filter(Boolean);
+  groups.replaceChildren(new Option('Selecciona un grupo',''),...stored.map(url=>new Option(new URL(url).pathname.split('/')[2],url)));
+ }
+ function updateLink(){open.href=facebookGroup(group.value)??'https://www.facebook.com/groups/';}
+ groupOptions();
+ group.oninput=updateLink;
+ groups.onchange=()=>{group.value=groups.value;updateLink();};
+ modal.querySelector('#ad-save-group').onclick=()=>{
+  const url=facebookGroup(group.value);
+  if(!url){toast('Pega el enlace directo de un grupo de Facebook.');return;}
+  try{
+   store.adGroups=[...new Set([...(store.adGroups??[]),url])];
+   saveLocal();
+   groupOptions();
+   groups.value=url;
+   updateLink();
+   toast('Grupo guardado.');
+  }catch(error){toast(errorMessage(error));}
+ };
+ modal.querySelector('#copy-ad').onclick=async()=>{
+  try{
+   if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(ad.value);
+   else {ad.focus();ad.select();if(!document.execCommand('copy'))throw Error();}
+   toast('Texto copiado.');
+  }catch{
+   ad.focus();ad.select();
+   if(document.execCommand('copy'))toast('Texto copiado.');
+   else toast('Mantén presionado el texto seleccionado y toca Copiar.');
+  }
+ };
+ function renderPhotos(){
+  photosHolder.replaceChildren(...photos.map((photo,index)=>{
+   const card=document.createElement('div'), image=document.createElement('img');
+   const save=document.createElement('button'), remove=document.createElement('button');
+   const url=URL.createObjectURL(photo);
+   image.alt=`Foto ${index+1} de la prenda`;
+   image.onload=image.onerror=()=>URL.revokeObjectURL(url);
+   image.src=url;
+   save.type=remove.type='button';
+   save.className=remove.className='secondary small';
+   save.textContent='Guardar foto'; remove.textContent='Quitar';
+   save.onclick=()=>download(photo,`prenda-${product.id}-${index+1}.jpg`);
+   remove.onclick=async()=>{
+    picker.disabled=true;
+    for(const button of photosHolder.querySelectorAll('button'))button.disabled=true;
+    try{photos=await productPhotos(productId,photos.filter((_,i)=>i!==index));}
+    catch(error){toast('No se pudo quitar la foto.');}
+    finally{picker.disabled=false;renderPhotos();}
+   };
+   card.append(image,save,remove);
+   return card;
+  }));
+ }
+ picker.disabled=true;
+ try{photos=await productPhotos(productId);renderPhotos();}
+ catch{toast('No se pueden leer las fotos de este dispositivo.');return;}
+ picker.disabled=false;
+ picker.onchange=async()=>{
+  const files=[...picker.files];
+  picker.value='';
+  if(!files.length)return;
+  if(files.length+photos.length>3){toast('Puedes guardar hasta tres fotos por prenda.');return;}
+  picker.disabled=true;
+  for(const button of photosHolder.querySelectorAll('button'))button.disabled=true;
+  try{
+   const next=[...photos];
+   for(const file of files)next.push(await compressPhoto(file));
+   photos=await productPhotos(productId,next);
+  }catch{toast('No se pudieron guardar las fotos. Elige imágenes JPG o PNG de hasta 25 MB.');}
+  finally{picker.disabled=false;renderPhotos();}
+ };
+}
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 function exportAll(){const out={exportedAt:new Date().toISOString(),mode:'local',...store};download(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}),`respaldo-negocio-ropa-${today()}.json`);}
 function closeModal(){document.getElementById('modal')?.close();}
-async function actionClick(button){const action=button.dataset.action;if(action==='navigate'){current=button.dataset.view;render();window.scrollTo({top:0,behavior:'instant'});return;}if(action==='close'){closeModal();return;}if(action==='new-product')return dialogProduct();if(action==='edit-price')return dialogEditPrice(button.dataset.id);if(action==='new-sale')return dialogSale();if(action==='new-purchase')return dialogPurchase();if(action==='new-expense')return dialogExpense();if(action==='add-line'){const lines=getPurchaseLines();lines.push({});document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='remove-line'){const lines=getPurchaseLines();lines.splice(num(button.dataset.index),1);document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='export')return exportCSV(button.dataset.kind);if(action==='export-all')return exportAll();}
+async function actionClick(button){const action=button.dataset.action;if(action==='navigate'){current=button.dataset.view;render();window.scrollTo({top:0,behavior:'instant'});return;}if(action==='close'){closeModal();return;}if(action==='new-product')return dialogProduct();if(action==='prepare-ad')return prepareAd(button.dataset.id);if(action==='edit-price')return dialogEditPrice(button.dataset.id);if(action==='new-sale')return dialogSale();if(action==='new-purchase')return dialogPurchase();if(action==='new-expense')return dialogExpense();if(action==='add-line'){const lines=getPurchaseLines();lines.push({});document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='remove-line'){const lines=getPurchaseLines();lines.splice(num(button.dataset.index),1);document.querySelector('#purchase-lines').innerHTML=lines.map((line,i)=>purchaseLine(i,line)).join('');updateOrderSummary();return;}if(action==='export')return exportCSV(button.dataset.kind);if(action==='export-all')return exportAll();}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;try{await actionClick(b);}catch(err){toast(errorMessage(err));console.error(err);}});
 document.addEventListener('change',e=>{if(e.target.id==='active-profile'){
   try{store.activeProfileId=e.target.value||null;saveLocal();render();}
