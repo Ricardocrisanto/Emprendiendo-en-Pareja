@@ -6,7 +6,7 @@ Primera versión funcional para administrar un pequeño negocio de ropa desde co
 
 - Pantalla de inicio con efectivo, utilidad, existencias, ventas y gráfica simple.
 - Catálogo de prendas por **SKU / modelo / talla / color**.
-- Compras de **varios modelos en un mismo pedido**, con descuento configurable por número total de piezas.
+- Compras de **varios modelos en un mismo pedido**, con tipo de compra y descuento manual por pieza.
 - Registro de ventas entregadas, cobros parciales iniciales, gastos, inventario automático y precio editable.
 - Simulador de inversión y tres escenarios (40%, 70% y 100% de venta).
 - Respaldo descargable en JSON y exportaciones CSV.
@@ -35,7 +35,7 @@ Abre https://emprendiendo-en-pareja.web.app/. Los registros se guardan en el nav
 
 ### Caso de prueba con datos ficticios
 
-En una cuenta vacía con el capital inicial de $4,000, crea dos SKU con precios de compra de $270 y $319. Compra cinco piezas de cada uno con $0.03 de envío. Deben aparecer $500 de ahorro, diez piezas y un total de $2,445.03. Si solo capturas nueve piezas, no debe aplicarse el descuento.
+En una cuenta vacía con el capital inicial de $4,000, crea dos SKU con precios de compra de $270 y $319. Compra cinco piezas de cada uno con $0.03 de envío. Activa «Aplicar descuento» y captura $50 por pieza. Deben aparecer $500 de ahorro, diez piezas y un total de $2,445.03. La cantidad de piezas no activa ni desactiva el descuento.
 
 Vende dos piezas del segundo SKU a $390 cada una. Captura $40 de descuento, $20 de envío cobrado, $500 cobrados, $15 de entrega y $5 de empaque. Registra por separado un gasto de $25. Deben quedar ocho piezas, $260 por cobrar, $177 de utilidad y $2,009.97 en caja. Prueba que la venta se rechace si supera la existencia.
 

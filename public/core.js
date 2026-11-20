@@ -29,12 +29,16 @@ export function derive(state){
  return {revenue:rounded(revenue),costOfGoods:rounded(costOfGoods),saleCosts:rounded(saleCosts),expenses:rounded(expenses),purchases:rounded(purchases),received:rounded(received),cash,profit,inventory,stock,pendingCollections,available:rounded(cash-reserve),margin: revenue ? rounded(profit/revenue*100):0,itemsSold:sum(activeSales.map(s=>s.qty)),salesCount:activeSales.length};
 }
 export function orderTotals(lines,minimum=10,discount=50,shipping=0){
+ const eligible=sum(lines.map(l=>l.qty))>=minimum;
+ const {qty,discount:effective,savings,merchandise,total,shipping:freight}=purchaseTotals(lines,eligible?discount:0,shipping);
+ return {qty,eligible,discount:effective,savings,merchandise,total,shipping:freight};
+}
+export function purchaseTotals(lines,discount=0,shipping=0){
  const qty=sum(lines.map(l=>l.qty));
- const eligible=qty>=minimum;
- const effective=eligible?discount:0;
- const merchandise=rounded(sum(lines.map(l=>num(l.qty)*(num(l.unitPrice)-effective))));
- const total=rounded(merchandise+num(shipping));
- return {qty,eligible,discount:effective,savings:rounded(qty*effective),merchandise,total,shipping:num(shipping)};
+ const subtotal=rounded(sum(lines.map(l=>num(l.qty)*num(l.unitPrice))));
+ const savings=rounded(qty*discount);
+ const merchandise=rounded(subtotal-savings);
+ return {qty,subtotal,discount,savings,merchandise,total:rounded(merchandise+num(shipping)),shipping:num(shipping)};
 }
 // Assign shipping in cents so the saved lines add up to the order total.
 export function purchaseLineCosts(lines, totals){
